@@ -1,0 +1,29 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Run Extension",
+      "type": "extensionHost",
+      "request": "launch",
+      "args": ["${workspaceFolder}"],
+      "outDir": "${workspaceFolder}/out",
+      "preLaunchTask": "compile"
+    },
+    {
+      "name": "Run Extension (no compile)",
+      "type": "extensionHost",
+      "request": "launch",
+      "args": ["${workspaceFolder}"],
+      "outDir": "${workspaceFolder}/out"
+    },
+    {
+      "name": "Run Extension (Cursor executable)",
+      "type": "extensionHost",
+      "request": "launch",
+      "runtimeExecutable": "/Applications/Cursor.app/Contents/MacOS/Cursor",
+      "args": ["--extensionDevelopmentPath=${workspaceFolder}"],
+      "outDir": "${workspaceFolder}/out",
+      "preLaunchTask": "compile"
+    }
+  ]
+}

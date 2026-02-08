@@ -1,0 +1,251 @@
+{
+    "name": "budget-master",
+    "displayName": "Budget Master",
+    "publisher": "local",
+    "description": "AI Traffic Controller to save token costs.",
+    "version": "0.0.1",
+    "engines": {
+        "vscode": "^1.90.0"
+    },
+    "categories": [
+        "AI",
+        "Other"
+    ],
+    "activationEvents": [
+        "onView:budgetMaster.chatView"
+    ],
+    "main": "./out/extension.js",
+    "contributes": {
+        "viewsContainers": {
+            "activitybar": [
+                {
+                    "id": "budget-master-sidebar",
+                    "title": "Budget Master",
+                    "icon": "$(graph)"
+                }
+            ]
+        },
+        "views": {
+            "budget-master-sidebar": [
+                {
+                    "type": "webview",
+                    "id": "budgetMaster.chatView",
+                    "name": "Cost Control Chat"
+                }
+            ]
+        },
+        "commands": [
+            {
+                "command": "budgetMaster.useSelectionAsContext",
+                "title": "Budget Master: Use selection as context"
+            },
+            {
+                "command": "budgetMaster.clearPinnedContext",
+                "title": "Budget Master: Clear pinned context"
+            },
+            {
+                "command": "budgetMaster.attachFileAsContext",
+                "title": "Budget Master: Attach file(s) as context"
+            },
+            {
+                "command": "budgetMaster.attachLinkAsContext",
+                "title": "Budget Master: Attach link(s) as context"
+            },
+            {
+                "command": "budgetMaster.resetSession",
+                "title": "Budget Master: Reset session (clear history & cost)"
+            },
+            {
+                "command": "budgetMaster.copySessionSummary",
+                "title": "Budget Master: Copy session summary to clipboard"
+            },
+            {
+                "command": "budgetMaster.newChat",
+                "title": "Budget Master: New chat"
+            },
+            {
+                "command": "budgetMaster.openChatHistory",
+                "title": "Budget Master: Open past chats"
+            },
+            {
+                "command": "budgetMaster.searchWorkspace",
+                "title": "Budget Master: Search workspace as context"
+            },
+            {
+                "command": "budgetMaster.chatWithSelection",
+                "title": "Budget Master: Chat with selection (focus chat, use selection as context)"
+            }
+        ],
+        "configuration": {
+            "title": "Budget Master",
+            "properties": {
+                "budgetMaster.openaiKey": {
+                    "type": "string",
+                    "default": "",
+                    "description": "Your OpenAI API Key (starts with sk-...)"
+                },
+                "budgetMaster.anthropicKey": {
+                    "type": "string",
+                    "default": "",
+                    "description": "Your Anthropic API Key (starts with sk-ant-...)"
+                },
+          "budgetMaster.xaiKey": {
+            "type": "string",
+            "default": "",
+            "description": "Your xAI (Grok) API Key for Grok models"
+          },
+          "budgetMaster.googleKey": {
+            "type": "string",
+            "default": "",
+            "description": "Your Google AI (Gemini) API Key from Google AI Studio"
+          },
+                "budgetMaster.kimiKey": {
+                    "type": "string",
+                    "default": "",
+                    "description": "Your Kimi (Moonshot AI) API Key from platform.moonshot.ai"
+                },
+                "budgetMaster.defaultModel": {
+                    "type": "string",
+                    "default": "auto",
+                    "description": "Default model when opening chat. Use 'auto' (smart routing), 'cascade', 'architect-builder', or any model id. Auto = try cheap first, then escalate (your keys, Cursor-like)."
+                },
+                "budgetMaster.architectModel": {
+            "type": "string",
+            "default": "claude-opus-4-6",
+            "description": "Architect model (planning) for Smart mode"
+          },
+          "budgetMaster.builderModel": {
+            "type": "string",
+            "default": "gemini-3-flash-preview",
+            "description": "Builder model (execution) for Smart mode"
+          },
+          "budgetMaster.cascadeCheapModel": {
+            "type": "string",
+            "default": "gemini-3-flash-preview",
+            "description": "Cheap model first in Cascade mode"
+          },
+          "budgetMaster.cascadeExpensiveModel": {
+            "type": "string",
+            "default": "claude-3-5-sonnet-20240620",
+            "description": "Escalation model when Cascade judge fails"
+          },
+          "budgetMaster.cascadeJudgeStrict": {
+            "type": "boolean",
+            "default": false,
+            "description": "Cascade: validate code/JSON when possible"
+          },
+          "budgetMaster.contextCacheEnabled": {
+            "type": "boolean",
+            "default": true,
+            "description": "Use context caching for large context"
+          },
+          "budgetMaster.contextCacheTokenThreshold": {
+            "type": "number",
+            "default": 8192,
+            "description": "Min tokens to use context cache"
+          },
+          "budgetMaster.contextCacheTtlMinutes": {
+            "type": "number",
+            "default": 60,
+            "description": "Cache TTL in minutes (Gemini)"
+          },
+          "budgetMaster.sessionBudgetCap": {
+            "type": "number",
+            "default": 0,
+            "description": "Session budget cap in USD (0 = no cap). When exceeded, warn or pause."
+          },
+          "budgetMaster.sessionBudgetPause": {
+            "type": "boolean",
+            "default": false,
+            "description": "When over session budget cap: true = block new requests, false = warn only"
+          },
+          "budgetMaster.promptCorrectionEnabled": {
+            "type": "boolean",
+            "default": true,
+            "description": "Correct prompt spelling, tech terms, and grammar before sending (cheaper cost). Benchmark tier shown per response."
+          },
+          "budgetMaster.grammarCheckUseLanguageTool": {
+            "type": "boolean",
+            "default": false,
+            "description": "Use LanguageTool API for deep grammar check (rate limit: 20 req/min; enable for highly intelligent correction)."
+          },
+          "budgetMaster.vectorVaultEnabled": {
+            "type": "boolean",
+            "default": false,
+            "description": "RAG: retrieve only relevant chunks from pinned context (saves input tokens). Requires OpenAI key for embeddings."
+          },
+          "budgetMaster.vectorVaultMinContextTokens": {
+            "type": "number",
+            "default": 2000,
+            "description": "Min pinned context tokens to use Vector Vault (RAG)."
+          },
+          "budgetMaster.contextSqueezerEnabled": {
+            "type": "boolean",
+            "default": true,
+            "description": "Token Crusher: strip comments and collapse blank lines in context before sending (30–40% token reduction on code)."
+          },
+          "budgetMaster.contextSqueezerStripComments": {
+            "type": "boolean",
+            "default": true,
+            "description": "Context Squeezer: remove line and block comments (//, #, /* */, etc.)."
+          },
+          "budgetMaster.contextSqueezerStripBlankLines": {
+            "type": "boolean",
+            "default": true,
+            "description": "Context Squeezer: collapse 3+ blank lines to one."
+          },
+          "budgetMaster.contextSqueezerMinChars": {
+            "type": "number",
+            "default": 500,
+            "description": "Min context length (chars) to run Context Squeezer; below this, context is sent as-is."
+          },
+          "budgetMaster.speculativeDrafterEnabled": {
+            "type": "boolean",
+            "default": false,
+            "description": "Use cheap model to draft and expensive model to verify. Saves tokens on success, but takes longer."
+          },
+          "budgetMaster.semanticCacheEnabled": {
+            "type": "boolean",
+            "default": true,
+            "description": "Deja Vu Protocol: cache replies by intent + context hash. Repeat questions (e.g. same file, same question) return instantly at $0 cost."
+          },
+          "budgetMaster.tokenMappingSchema": {
+            "type": "string",
+            "default": "",
+            "enum": ["", "sentiment", "priority", "yesno", "category"],
+            "description": "Output as code then map to label (saves output tokens). Empty = full reply."
+          },
+          "budgetMaster.tokenizerArbitrageNote": {
+            "type": "boolean",
+            "default": true,
+            "description": "Show tokenizer note in cost estimate (estimates vary by model)."
+          }
+        }
+      }
+    },
+    "scripts": {
+        "vscode:prepublish": "npm run compile",
+        "compile": "tsc -p ./",
+        "watch": "tsc -watch -p ./",
+        "dev": "concurrently \"npm run watch\" \"node scripts/watch-and-install.js\"",
+        "pretest": "npm run compile && npm run lint",
+        "lint": "eslint src --ext ts",
+        "test": "node ./out/test/runTest.js",
+        "start": "cursor --extensionDevelopmentPath=.",
+        "start:vscode": "code --extensionDevelopmentPath=.",
+        "package": "npm run compile && npx vsce package",
+        "install:local": "npm run package && cp ./budget-master-0.0.1.vsix /tmp/budget-master-0.0.1.vsix && cursor --install-extension /tmp/budget-master-0.0.1.vsix"
+    },
+    "devDependencies": {
+        "@types/node": "20.x",
+        "@types/vscode": "^1.90.0",
+        "@vscode/vsce": "^3.0.0",
+        "concurrently": "^9.0.0",
+        "typescript": "^5.4.5"
+    },
+    "dependencies": {
+        "@anthropic-ai/sdk": "^0.24.0",
+        "@google/genai": "^1.40.0",
+        "openai": "^4.52.0"
+    }
+}
