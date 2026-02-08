@@ -2,6 +2,8 @@
 
 AI traffic controller for Cursor: routes chats to cheap vs expensive models, tracks token cost, and supports Smart (Architect/Builder) and Cascade modes.
 
+**Security:** API keys are stored only in Cursor/VS Code settings (Settings → Budget Master). Do not commit `.vscode/settings.json`, `.env`, or any file containing keys.
+
 Use it as your **main chat** like Cursor’s built-in AI: **Apply to editor** and **Run in terminal** on code blocks in replies, and **Search workspace** to attach context — same workflow as Cursor chat.
 
 ---

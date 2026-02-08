@@ -1,3 +1,13 @@
 node_modules
 out/
 *.vsix
+
+# Secrets and local config (do not commit)
+.env
+.env.*
+*.env
+.vscode/settings.json
+*.pem
+*.key
+.secret
+.secrets
