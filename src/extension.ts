@@ -1,4 +1,6 @@
 import * as vscode from 'vscode';
+import * as fs from 'fs';
+import * as path from 'path';
 import OpenAI from 'openai';
 import Anthropic from '@anthropic-ai/sdk';
 import { GoogleGenAI } from '@google/genai';
@@ -188,6 +190,11 @@ export function activate(context: vscode.ExtensionContext) {
     );
     context.subscriptions.push(
         vscode.commands.registerCommand('budgetMaster.chatWithSelection', () => provider.chatWithSelection())
+    );
+    context.subscriptions.push(
+        vscode.commands.registerCommand('budgetMaster.refreshWebview', () => {
+            provider.refreshWebview();
+        })
     );
 }
 function formatTokens(n: number): string {
@@ -547,8 +554,11 @@ class BudgetChatProvider implements vscode.WebviewViewProvider {
 
     public resolveWebviewView(webviewView: vscode.WebviewView) {
         this._view = webviewView;
-        webviewView.webview.options = { enableScripts: true };
-        webviewView.webview.html = this._getHtmlForWebview();
+        webviewView.webview.options = {
+            enableScripts: true,
+            localResourceRoots: [this._extensionUri],
+        };
+        webviewView.webview.html = this._getHtmlForWebview(webviewView.webview);
 
         // LISTEN FOR MESSAGES FROM THE UI
         webviewView.webview.onDidReceiveMessage(async (data) => {
@@ -584,6 +594,14 @@ class BudgetChatProvider implements vscode.WebviewViewProvider {
             }
         });
         this._notifyContextUpdated();
+    }
+
+    /** Reload the webview HTML (use after updating UI so the new design is visible). */
+    public refreshWebview(): void {
+        if (this._view) {
+            this._view.webview.html = this._getHtmlForWebview(this._view.webview);
+            vscode.window.showInformationMessage('Budget Master: UI refreshed.');
+        }
     }
 
     private async _applyCodeBlock(code: string, _language: string, path: string | null) {
@@ -1314,16 +1332,24 @@ class BudgetChatProvider implements vscode.WebviewViewProvider {
         return labels[modelId] || modelId;
     }
 
-    private _getHtmlForWebview() {
+    private _getHtmlForWebview(webview: vscode.Webview) {
         const config = vscode.workspace.getConfiguration('budgetMaster');
         const defaultModel = (config.get<string>('defaultModel') ?? 'auto').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
         const supportedModelsData = { premium: premiumModels, free: freeModels };
+        const logoPath = path.join(this._extensionUri.fsPath, 'media', 'logo.png');
+        let logoSrc = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'logo.png')).toString();
+        try {
+            if (fs.existsSync(logoPath)) {
+                const buf = fs.readFileSync(logoPath);
+                logoSrc = 'data:image/png;base64,' + buf.toString('base64');
+            }
+        } catch (_) { /* keep URI fallback */ }
         return `<!DOCTYPE html>
         <html lang="en">
         <head>
             <meta charset="UTF-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <script>window.SUPPORTED_MODELS = ${JSON.stringify(supportedModelsData)}; window.BUDGET_MASTER_DEFAULT_MODEL = '${defaultModel}';</script>
+            <script>window.SUPPORTED_MODELS = ${JSON.stringify(supportedModelsData).replace(/<\/script/gi, '<\\/script')}; window.BUDGET_MASTER_DEFAULT_MODEL = '${defaultModel}';</script>
             <style>
                 * { box-sizing: border-box; }
                 :root {
@@ -1360,45 +1386,80 @@ class BudgetChatProvider implements vscode.WebviewViewProvider {
                 }
                 .header {
                     flex-shrink: 0;
-                    padding: 12px 16px 12px;
-                    padding-top: max(12px, env(safe-area-inset-top, 12px));
+                    padding: 16px 20px 16px;
+                    padding-top: max(16px, env(safe-area-inset-top, 16px));
                     display: flex;
                     align-items: center;
-                    justify-content: space-between;
-                    background: rgba(28, 28, 30, 0.95);
-                    -webkit-backdrop-filter: blur(20px) saturate(180%);
-                    backdrop-filter: blur(20px) saturate(180%);
-                    border-bottom: 0.5px solid rgba(255,255,255,0.08);
+                    justify-content: flex-start;
+                    gap: 16px;
+                    flex-wrap: wrap;
+                    background: linear-gradient(180deg, #0a0a0a 0%, #000000 100%);
                     position: relative;
-                    border-bottom-left-radius: 20px;
-                    border-bottom-right-radius: 20px;
-                    box-shadow: 0 1px 0 0 rgba(255,255,255,0.04);
+                    border-bottom: none;
                 }
-                .header::before {
+                .header::after {
                     content: '';
                     position: absolute;
-                    top: 0;
-                    left: 0;
-                    right: 0;
+                    bottom: 0;
+                    left: 20px;
+                    right: 20px;
                     height: 1px;
-                    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.06), transparent);
+                    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.08), transparent);
                     pointer-events: none;
                 }
+                .header-logo {
+                    width: 56px;
+                    height: 56px;
+                    object-fit: contain;
+                    flex-shrink: 0;
+                    filter: drop-shadow(0 2px 8px rgba(0,122,255,0.25));
+                    transition: transform 0.2s ease, filter 0.2s ease;
+                }
+                .header-logo:hover {
+                    transform: scale(1.05);
+                    filter: drop-shadow(0 4px 12px rgba(0,122,255,0.35));
+                }
                 .header-title {
-                    font-weight: 600;
-                    font-size: 17px;
-                    letter-spacing: -0.41px;
+                    font-weight: 700;
+                    font-size: 20px;
+                    letter-spacing: -0.5px;
                     color: var(--fg);
+                    text-shadow: 0 1px 2px rgba(0,0,0,0.5);
+                }
+                .header-badge {
+                    display: inline-block;
+                    margin-left: 8px;
+                    padding: 2px 8px;
+                    font-size: 10px;
+                    font-weight: 700;
+                    text-transform: uppercase;
+                    letter-spacing: 0.06em;
+                    color: rgba(0,122,255,0.95);
+                    background: rgba(0,122,255,0.15);
+                    border-radius: 6px;
+                    vertical-align: middle;
+                }
+                .header-brand {
+                    display: flex;
+                    align-items: center;
+                    gap: 14px;
+                }
+                .header-right {
+                    display: flex;
+                    align-items: center;
+                    gap: 10px;
+                    flex-wrap: wrap;
+                    margin-left: auto;
                 }
                 .session-cost {
                     display: flex;
                     align-items: center;
-                    gap: 6px;
-                    padding: 6px 12px;
-                    background: var(--bg-tertiary);
-                    border: 1px solid var(--border);
+                    gap: 8px;
+                    padding: 8px 14px;
+                    background: rgba(20,20,20,0.9);
+                    border: 1px solid rgba(255,255,255,0.06);
                     border-radius: var(--radius-sm);
-                    box-shadow: inset 0 1px 2px rgba(0,0,0,0.4);
+                    box-shadow: 0 2px 8px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.03);
                 }
                 .session-cost-label {
                     font-size: 11px;
@@ -1423,12 +1484,12 @@ class BudgetChatProvider implements vscode.WebviewViewProvider {
                 .session-tokens {
                     display: flex;
                     align-items: center;
-                    gap: 6px;
-                    padding: 6px 12px;
-                    background: var(--bg-tertiary);
-                    border: 1px solid var(--border);
+                    gap: 8px;
+                    padding: 8px 14px;
+                    background: rgba(20,20,20,0.9);
+                    border: 1px solid rgba(255,255,255,0.06);
                     border-radius: var(--radius-sm);
-                    box-shadow: inset 0 1px 2px rgba(0,0,0,0.4);
+                    box-shadow: 0 2px 8px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.03);
                 }
                 .session-tokens-label {
                     font-size: 11px;
@@ -1446,8 +1507,59 @@ class BudgetChatProvider implements vscode.WebviewViewProvider {
                 .header-actions {
                     display: flex;
                     align-items: center;
-                    gap: 8px;
+                    gap: 6px;
+                    flex-wrap: wrap;
                 }
+                .header-pill {
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 6px;
+                    padding: 8px 12px;
+                    background: rgba(20,20,20,0.9);
+                    border: 1px solid rgba(255,255,255,0.06);
+                    border-radius: var(--radius-sm);
+                    box-shadow: 0 2px 8px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.03);
+                    color: var(--fg-secondary);
+                    font-family: var(--font);
+                    font-size: 11px;
+                    font-weight: 600;
+                    text-transform: uppercase;
+                    letter-spacing: 0.04em;
+                    cursor: pointer;
+                    transition: all 0.2s ease;
+                }
+                .header-pill:hover {
+                    color: var(--fg);
+                    background: rgba(30,30,30,0.95);
+                    border-color: rgba(255,255,255,0.12);
+                    transform: translateY(-1px);
+                    box-shadow: 0 4px 12px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.05);
+                }
+                .header-pill .chevron { font-size: 9px; opacity: 0.9; transition: transform 0.2s; }
+                .header-pill.expanded .chevron { transform: rotate(90deg); }
+                .header-drawer {
+                    flex-shrink: 0;
+                    display: none;
+                    background: linear-gradient(180deg, #0a0a0a 0%, #000000 100%);
+                    border-bottom: none;
+                    position: relative;
+                }
+                .header-drawer::after {
+                    content: '';
+                    position: absolute;
+                    bottom: 0;
+                    left: 20px;
+                    right: 20px;
+                    height: 1px;
+                    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.08), transparent);
+                    pointer-events: none;
+                }
+                .header-drawer.visible {
+                    display: block;
+                }
+                .header-drawer .supported-models-panel { padding: 12px 16px 16px; }
+                .header-drawer .by-model-panel { padding: 8px 16px 12px; }
+                .header-drawer-all-models { padding: 8px 16px 12px; }
                 .icon-btn {
                     width: 32px;
                     height: 32px;
@@ -1471,30 +1583,30 @@ class BudgetChatProvider implements vscode.WebviewViewProvider {
                     overflow-y: auto;
                     overflow-x: hidden;
                     -webkit-overflow-scrolling: touch;
-                    padding: 12px 16px 16px;
+                    padding: 16px 20px 20px;
                     display: flex;
                     flex-direction: column;
-                    gap: 8px;
+                    gap: 10px;
                     min-height: 0;
                     background: #000000;
                 }
                 .msg {
                     position: relative;
-                    padding: 12px 16px 18px 16px;
+                    padding: 14px 18px 20px 18px;
                     max-width: 85%;
                     word-wrap: break-word;
                     font-size: 16px;
-                    line-height: 1.35;
+                    line-height: 1.4;
                     letter-spacing: -0.32px;
                     overflow: visible;
                 }
                 .msg.user {
                     align-self: flex-end;
-                    background: var(--bubble-user);
+                    background: linear-gradient(135deg, #007AFF 0%, #0055CC 100%);
                     color: #fff;
                     border: none;
-                    border-radius: 18px 18px 6px 18px;
-                    box-shadow: 0 1px 1px rgba(0,0,0,0.15);
+                    border-radius: 20px 20px 6px 20px;
+                    box-shadow: 0 2px 12px rgba(0,122,255,0.3);
                 }
                 .msg.user::after {
                     content: '';
@@ -1503,15 +1615,15 @@ class BudgetChatProvider implements vscode.WebviewViewProvider {
                     bottom: -1px;
                     width: 14px;
                     height: 12px;
-                    background: var(--bubble-user);
+                    background: #0055CC;
                     border-radius: 0 0 12px 0;
                 }
                 .msg.ai {
                     align-self: flex-start;
-                    background: var(--bubble-ai);
-                    border: none;
-                    border-radius: 18px 18px 18px 6px;
-                    box-shadow: 0 1px 1px rgba(0,0,0,0.2);
+                    background: rgba(30,30,30,0.95);
+                    border: 1px solid rgba(255,255,255,0.06);
+                    border-radius: 20px 20px 20px 6px;
+                    box-shadow: 0 2px 12px rgba(0,0,0,0.3);
                 }
                 .msg.ai::after {
                     content: '';
@@ -1520,7 +1632,7 @@ class BudgetChatProvider implements vscode.WebviewViewProvider {
                     bottom: -1px;
                     width: 14px;
                     height: 12px;
-                    background: var(--bubble-ai);
+                    background: rgba(30,30,30,0.95);
                     border-radius: 0 0 0 12px;
                 }
                 .msg .meta {
@@ -1531,21 +1643,27 @@ class BudgetChatProvider implements vscode.WebviewViewProvider {
                 .msg.user .meta { color: var(--fg-secondary); }
                 .input-row {
                     flex-shrink: 0;
-                    padding: 10px 16px 16px;
+                    padding: 12px 20px 20px;
                     display: flex;
-                    gap: 8px;
+                    gap: 10px;
                     align-items: flex-end;
+                    background: linear-gradient(180deg, transparent 0%, rgba(0,0,0,0.5) 100%);
                 }
                 .input-wrap {
                     flex: 1;
                     min-width: 0;
-                    background: var(--bg-tertiary);
-                    border: 1px solid var(--border);
+                    background: rgba(20,20,20,0.95);
+                    border: 1px solid rgba(255,255,255,0.08);
                     border-radius: var(--radius-pill);
-                    padding: 10px 16px;
-                    min-height: 44px;
+                    padding: 12px 18px;
+                    min-height: 48px;
                     max-height: 120px;
-                    box-shadow: inset 0 2px 4px rgba(0,0,0,0.4);
+                    box-shadow: 0 2px 12px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.03);
+                    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+                }
+                .input-wrap:focus-within {
+                    border-color: rgba(0,122,255,0.4);
+                    box-shadow: 0 2px 16px rgba(0,122,255,0.15), inset 0 1px 0 rgba(255,255,255,0.03);
                 }
                 #prompt {
                     width: 100%;
@@ -1564,53 +1682,88 @@ class BudgetChatProvider implements vscode.WebviewViewProvider {
                 }
                 #prompt::placeholder { color: var(--fg-tertiary); }
                 .send-btn {
-                    width: 44px;
-                    height: 44px;
+                    width: 48px;
+                    height: 48px;
                     border-radius: 50%;
                     border: none;
-                    background: var(--bubble-user);
+                    background: linear-gradient(135deg, #007AFF 0%, #0055CC 100%);
                     color: #fff;
                     cursor: pointer;
                     display: flex;
                     align-items: center;
                     justify-content: center;
                     flex-shrink: 0;
-                    transition: opacity 0.2s, transform 0.1s;
+                    transition: all 0.2s ease;
+                    box-shadow: 0 4px 12px rgba(0,122,255,0.35);
                 }
-                .send-btn:hover { opacity: 0.9; }
-                .send-btn:active { transform: scale(0.96); }
+                .send-btn:hover {
+                    transform: translateY(-2px);
+                    box-shadow: 0 6px 16px rgba(0,122,255,0.45);
+                }
+                .send-btn:active { transform: scale(0.95) translateY(0); }
                 .send-btn svg { width: 22px; height: 22px; }
                 .model-bar {
                     flex-shrink: 0;
-                    padding: 8px 16px;
-                    border-bottom: 1px solid var(--border);
+                    padding: 10px 20px;
+                    border-bottom: none;
                     display: flex;
                     align-items: center;
-                    gap: 8px;
+                    gap: 10px;
+                    background: rgba(10,10,10,0.8);
+                    position: relative;
+                }
+                .model-bar::after {
+                    content: '';
+                    position: absolute;
+                    bottom: 0;
+                    left: 20px;
+                    right: 20px;
+                    height: 1px;
+                    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.06), transparent);
                 }
                 .model-bar label {
                     font-size: 12px;
-                    font-weight: 500;
+                    font-weight: 600;
                     color: var(--fg-tertiary);
+                    text-transform: uppercase;
+                    letter-spacing: 0.04em;
                 }
                 .model-select {
                     flex: 1;
                     min-width: 0;
-                    padding: 6px 10px;
+                    padding: 8px 12px;
                     font-family: var(--font);
                     font-size: 13px;
                     color: var(--fg);
-                    background: var(--bg-tertiary);
-                    border: 1px solid var(--border);
+                    background: rgba(20,20,20,0.9);
+                    border: 1px solid rgba(255,255,255,0.06);
                     border-radius: var(--radius-sm);
                     cursor: pointer;
-                    box-shadow: inset 0 1px 2px rgba(0,0,0,0.4);
+                    box-shadow: 0 2px 8px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.03);
+                    transition: border-color 0.2s ease;
+                }
+                .model-select:hover {
+                    border-color: rgba(255,255,255,0.12);
+                }
+                .model-select:focus {
+                    outline: none;
+                    border-color: rgba(0,122,255,0.4);
                 }
                 .estimate-panel {
                     flex-shrink: 0;
-                    padding: 10px 16px;
-                    border-bottom: 1px solid var(--border);
-                    background: var(--bg-soft);
+                    padding: 12px 20px;
+                    border-bottom: none;
+                    background: rgba(10,10,10,0.6);
+                    position: relative;
+                }
+                .estimate-panel::after {
+                    content: '';
+                    position: absolute;
+                    bottom: 0;
+                    left: 20px;
+                    right: 20px;
+                    height: 1px;
+                    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.06), transparent);
                 }
                 .estimate-panel .row {
                     display: flex;
@@ -1660,6 +1813,24 @@ class BudgetChatProvider implements vscode.WebviewViewProvider {
                     font-size: 11px;
                     color: var(--fg-tertiary);
                 }
+                .message-toolbar {
+                    flex-shrink: 0;
+                    padding: 6px 16px;
+                    border-bottom: 1px solid var(--border);
+                    display: flex;
+                    align-items: center;
+                    gap: 4px;
+                    background: var(--bg-soft);
+                }
+                .message-toolbar .icon-btn {
+                    width: 32px;
+                    height: 32px;
+                    border-radius: 8px;
+                }
+                .message-toolbar .icon-btn svg {
+                    width: 16px;
+                    height: 16px;
+                }
                 .context-bar {
                     flex-shrink: 0;
                     padding: 6px 16px;
@@ -1691,10 +1862,27 @@ class BudgetChatProvider implements vscode.WebviewViewProvider {
                     background: var(--bg-tertiary);
                 }
                 .text-btn.hidden { display: none; }
-                .supported-models-wrap {
+                .top-controls-scroll {
                     flex-shrink: 0;
-                    border-bottom: 1px solid var(--border);
-                    background: var(--bg-soft);
+                    max-height: 42vh;
+                    overflow-y: auto;
+                    overflow-x: hidden;
+                    -webkit-overflow-scrolling: touch;
+                    border-bottom: none;
+                    background: linear-gradient(180deg, rgba(10,10,10,0.8) 0%, rgba(0,0,0,0.9) 100%);
+                    position: relative;
+                }
+                .top-controls-scroll::after {
+                    content: '';
+                    position: absolute;
+                    bottom: 0;
+                    left: 20px;
+                    right: 20px;
+                    height: 1px;
+                    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.08), transparent);
+                }
+                .supported-models-wrap {
+                    background: transparent;
                 }
                 .supported-models-toggle {
                     width: 100%;
@@ -1717,7 +1905,9 @@ class BudgetChatProvider implements vscode.WebviewViewProvider {
                 .supported-models-panel {
                     display: none;
                     padding: 12px 16px 16px;
+                    max-height: none;
                     overflow-x: auto;
+                    overflow-y: visible;
                 }
                 .supported-models-panel.visible { display: block; }
                 .supported-models-panel h4 {
@@ -1840,9 +2030,7 @@ class BudgetChatProvider implements vscode.WebviewViewProvider {
                 .cursor-style-hint strong { font-weight: 600; color: var(--fg-secondary); }
                 .by-model-wrap {
                     flex-shrink: 0;
-                    padding: 6px 16px 10px;
-                    border-bottom: 1px solid var(--border);
-                    background: var(--bg-soft);
+                    background: transparent;
                 }
                 .by-model-toggle {
                     width: 100%;
@@ -1866,7 +2054,7 @@ class BudgetChatProvider implements vscode.WebviewViewProvider {
                 .by-model-toggle.expanded .chevron { transform: rotate(90deg); }
                 .by-model-panel {
                     display: none;
-                    padding: 8px 0 4px;
+                    padding: 8px 16px 12px;
                     font-size: 12px;
                 }
                 .by-model-panel.visible { display: block; }
@@ -1895,10 +2083,13 @@ class BudgetChatProvider implements vscode.WebviewViewProvider {
                 .all-models-list.visible { display: block; }
             </style>
         </head>
-        <body>
+        <body data-ui-version="message-toolbar">
             <header class="header">
-                <span class="header-title">Budget Master</span>
-                <div class="header-actions">
+                <div class="header-brand">
+                    <img src="${logoSrc.replace(/"/g, '&quot;')}" alt="Budget Master" class="header-logo" width="56" height="56" />
+                    <span class="header-title">Budget Master<span class="header-badge">updated</span></span>
+                </div>
+                <div class="header-right">
                     <div class="session-tokens">
                         <span class="session-tokens-label">Tokens</span>
                         <span class="session-tokens-amount" id="total-tokens">0</span>
@@ -1908,20 +2099,46 @@ class BudgetChatProvider implements vscode.WebviewViewProvider {
                         <span class="session-cost-amount" id="total-cost">0.0000</span>
                         <span class="session-saved" id="session-saved"></span>
                     </div>
-                    <button type="button" class="icon-btn" id="new-chat-btn" aria-label="New chat" title="New chat (current chat saved to history)">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+                </div>
+                <div class="header-actions">
+                    <button type="button" class="header-pill" id="supported-models-toggle" aria-expanded="false">
+                        <span class="chevron">▶</span>
+                        <span>Supported</span>
                     </button>
-                    <button type="button" class="icon-btn" id="history-btn" aria-label="Past chats" title="Past chats">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+                    <button type="button" class="header-pill" id="by-model-toggle" aria-expanded="false">
+                        <span class="chevron">▶</span>
+                        <span>Tokens by model</span>
                     </button>
-                    <button type="button" class="icon-btn" id="reset-session-btn" aria-label="Reset session" title="Reset session (clear history & cost)">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
-                    </button>
-                    <button type="button" class="icon-btn" id="settings-btn" aria-label="Open Budget Master settings" title="Settings">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                    <button type="button" class="header-pill" id="all-models-toggle" aria-expanded="false">
+                        <span class="chevron">▶</span>
+                        <span>All models (est.)</span>
                     </button>
                 </div>
             </header>
+            <div class="header-drawer" id="header-drawer">
+                <div class="supported-models-wrap">
+                    <div class="supported-models-panel" id="supported-models-panel">
+                        <h4>Premium models (require login / API key)</h4>
+                        <table id="supported-premium-table">
+                            <thead><tr><th>Model</th><th>Browser</th><th>API</th><th>Login required</th></tr></thead>
+                            <tbody></tbody>
+                        </table>
+                        <h4 style="margin-top: 14px;">Free models (no signup / API key required)</h4>
+                        <table id="supported-free-table">
+                            <thead><tr><th>Model</th><th>Provider</th><th>Free tier</th></tr></thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="by-model-wrap" id="by-model-wrap">
+                    <div class="by-model-panel" id="by-model-panel">
+                        <div id="by-model-list"></div>
+                    </div>
+                </div>
+                <div class="header-drawer-all-models">
+                    <div class="all-models-list" id="all-models-list"></div>
+                </div>
+            </div>
             <div class="history-panel" id="history-panel">
                 <div class="history-panel-header">
                     <span>Past chats</span>
@@ -1929,6 +2146,7 @@ class BudgetChatProvider implements vscode.WebviewViewProvider {
                 </div>
                 <div class="history-panel-list" id="history-list"></div>
             </div>
+            <div class="top-controls-scroll">
             <div class="model-bar">
                 <label for="model-select">Model</label>
                 <select id="model-select" class="model-select" aria-label="Choose AI model">
@@ -2003,33 +2221,6 @@ class BudgetChatProvider implements vscode.WebviewViewProvider {
                     </optgroup>
                 </select>
             </div>
-            <div class="supported-models-wrap">
-                <button type="button" class="supported-models-toggle" id="supported-models-toggle" aria-expanded="false">
-                    <span class="chevron">▶</span>
-                    <span>Supported models (reference)</span>
-                </button>
-                <div class="supported-models-panel" id="supported-models-panel">
-                    <h4>Premium models (require login / API key)</h4>
-                    <table id="supported-premium-table">
-                        <thead><tr><th>Model</th><th>Browser</th><th>API</th><th>Login required</th></tr></thead>
-                        <tbody></tbody>
-                    </table>
-                    <h4 style="margin-top: 14px;">Free models (no signup / API key required)</h4>
-                    <table id="supported-free-table">
-                        <thead><tr><th>Model</th><th>Provider</th><th>Free tier</th></tr></thead>
-                        <tbody></tbody>
-                    </table>
-                </div>
-            </div>
-            <div class="by-model-wrap" id="by-model-wrap">
-                <button type="button" class="by-model-toggle" id="by-model-toggle" aria-expanded="false">
-                    <span class="chevron">▶</span>
-                    <span>Tokens by model (this session)</span>
-                </button>
-                <div class="by-model-panel" id="by-model-panel">
-                    <div id="by-model-list"></div>
-                </div>
-            </div>
             <div class="estimate-panel" id="estimate-panel">
                 <div class="row">
                     <span class="est-label">Before you send (est.):</span>
@@ -2039,10 +2230,23 @@ class BudgetChatProvider implements vscode.WebviewViewProvider {
                 <div class="cheaper-title">Same result, cheaper — pick one to save:</div>
                 <div class="cheaper-list" id="cheaper-list"></div>
                 <div class="tokenizer-note" id="tokenizer-note" style="font-size: 11px; color: var(--fg-tertiary); margin-top: 6px;"></div>
-                <div class="all-models-toggle" id="all-models-toggle">▼ All models (estimated cost)</div>
-                <div class="all-models-list" id="all-models-list"></div>
+            </div>
             </div>
             <div class="chat-container" id="chat"></div>
+            <div class="message-toolbar">
+                <button type="button" class="icon-btn" id="new-chat-btn" aria-label="New chat" title="New chat (current chat saved to history)">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+                </button>
+                <button type="button" class="icon-btn" id="history-btn" aria-label="Past chats" title="Past chats">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+                </button>
+                <button type="button" class="icon-btn" id="reset-session-btn" aria-label="Reset session" title="Reset session (clear history & cost)">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+                </button>
+                <button type="button" class="icon-btn" id="settings-btn" aria-label="Open Budget Master settings" title="Settings">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                </button>
+            </div>
             <div class="context-bar" id="context-bar">
                 <span class="context-summary" id="context-summary"></span>
                 <div class="context-actions">
@@ -2298,17 +2502,28 @@ class BudgetChatProvider implements vscode.WebviewViewProvider {
                 }
                 function escapeHtml(s) { return (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
 
+                const headerDrawer = document.getElementById('header-drawer');
+                const supportedPanel = document.getElementById('supported-models-panel');
+                function updateHeaderDrawerVisibility() {
+                    const anyVisible = (supportedPanel && supportedPanel.classList.contains('visible')) ||
+                        (byModelPanel && byModelPanel.classList.contains('visible')) ||
+                        (allModelsListEl && allModelsListEl.classList.contains('visible'));
+                    if (headerDrawer) headerDrawer.classList.toggle('visible', !!anyVisible);
+                }
                 if (byModelToggle && byModelPanel) {
                     byModelToggle.addEventListener('click', () => {
                         const on = byModelToggle.classList.toggle('expanded');
                         byModelPanel.classList.toggle('visible', on);
                         byModelToggle.setAttribute('aria-expanded', on ? 'true' : 'false');
+                        updateHeaderDrawerVisibility();
                     });
                 }
                 if (allModelsToggle && allModelsListEl) {
                     allModelsToggle.addEventListener('click', () => {
                         const on = allModelsListEl.classList.toggle('visible');
-                        allModelsToggle.textContent = on ? '▲ All models (estimated cost)' : '▼ All models (estimated cost)';
+                        allModelsToggle.classList.toggle('expanded', on);
+                        allModelsToggle.setAttribute('aria-expanded', on ? 'true' : 'false');
+                        updateHeaderDrawerVisibility();
                     });
                 }
                 attachBtn.addEventListener('click', () => vscode.postMessage({ type: 'attachFile' }));
@@ -2386,19 +2601,26 @@ class BudgetChatProvider implements vscode.WebviewViewProvider {
                 requestEstimate();
 
                 (function initSupportedModels() {
-                    const data = window.SUPPORTED_MODELS;
-                    if (!data) return;
-                    const premiumTbody = document.getElementById('supported-premium-table').querySelector('tbody');
-                    const freeTbody = document.getElementById('supported-free-table').querySelector('tbody');
-                    if (data.premium && premiumTbody) {
-                        premiumTbody.innerHTML = data.premium.map(function (r) {
-                            return '<tr><td>' + escapeHtml(r.model) + '</td><td>' + escapeHtml(r.browser) + '</td><td>' + escapeHtml(r.api) + '</td><td class="check">✓</td></tr>';
-                        }).join('');
+                    function escapeHtml(s) { return (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+                    var data = window.SUPPORTED_MODELS;
+                    if (!data || typeof data !== 'object') return;
+                    var premiumTable = document.getElementById('supported-premium-table');
+                    var freeTable = document.getElementById('supported-free-table');
+                    if (data.premium && Array.isArray(data.premium) && premiumTable) {
+                        var premiumTbody = premiumTable.querySelector('tbody');
+                        if (premiumTbody) {
+                            premiumTbody.innerHTML = data.premium.map(function (r) {
+                                return '<tr><td>' + escapeHtml(r.model) + '</td><td>' + escapeHtml(r.browser) + '</td><td>' + escapeHtml(r.api) + '</td><td class="check">✓</td></tr>';
+                            }).join('');
+                        }
                     }
-                    if (data.free && freeTbody) {
-                        freeTbody.innerHTML = data.free.map(function (r) {
-                            return '<tr><td>' + escapeHtml(r.model) + '</td><td>' + escapeHtml(r.provider) + '</td><td class="check">' + escapeHtml(r.freeTier) + '</td></tr>';
-                        }).join('');
+                    if (data.free && Array.isArray(data.free) && freeTable) {
+                        var freeTbody = freeTable.querySelector('tbody');
+                        if (freeTbody) {
+                            freeTbody.innerHTML = data.free.map(function (r) {
+                                return '<tr><td>' + escapeHtml(r.model) + '</td><td>' + escapeHtml(r.provider) + '</td><td class="check">' + escapeHtml(r.freeTier) + '</td></tr>';
+                            }).join('');
+                        }
                     }
                     var toggle = document.getElementById('supported-models-toggle');
                     var panel = document.getElementById('supported-models-panel');
@@ -2407,9 +2629,9 @@ class BudgetChatProvider implements vscode.WebviewViewProvider {
                             var on = toggle.classList.toggle('expanded');
                             panel.classList.toggle('visible', on);
                             toggle.setAttribute('aria-expanded', on ? 'true' : 'false');
+                            if (typeof updateHeaderDrawerVisibility === 'function') updateHeaderDrawerVisibility();
                         });
                     }
-                    function escapeHtml(s) { return (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
                 })();
             </script>
         </body>

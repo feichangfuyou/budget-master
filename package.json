@@ -2,6 +2,7 @@
     "name": "budget-master",
     "displayName": "Budget Master",
     "publisher": "local",
+    "repository": { "type": "git", "url": "https://github.com/local/budget-master" },
     "description": "AI Traffic Controller to save token costs.",
     "version": "0.0.1",
     "engines": {
@@ -74,6 +75,10 @@
             {
                 "command": "budgetMaster.chatWithSelection",
                 "title": "Budget Master: Chat with selection (focus chat, use selection as context)"
+            },
+            {
+                "command": "budgetMaster.refreshWebview",
+                "title": "Budget Master: Refresh UI (reload panel to see latest design)"
             }
         ],
         "configuration": {
