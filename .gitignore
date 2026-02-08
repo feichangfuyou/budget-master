@@ -5,9 +5,21 @@ out/
 # Secrets and local config (do not commit)
 .env
 .env.*
+!.env.example
 *.env
 .vscode/settings.json
 *.pem
 *.key
+*.p12
 .secret
 .secrets
+*credentials*
+*secret*
+*.session
+*.session-journal
+local.json
+private.*
+*.local
+.DS_Store
+*.log
+npm-debug.log*

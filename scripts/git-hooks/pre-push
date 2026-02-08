@@ -1,0 +1,43 @@
+#!/bin/sh
+# Pre-push hook: block push if commits contain secrets or personal data.
+# Install: cp scripts/git-hooks/pre-push .git/hooks/pre-push && chmod +x .git/hooks/pre-push
+
+set -e
+remote="$1"
+url="$2"
+z40=0000000000000000000000000000000000000000
+
+if [ -n "$GIT_SKIP_PRE_PUSH_NO_SECRETS" ]; then
+	exit 0
+fi
+
+while read local_ref local_sha remote_ref remote_sha; do
+	if [ "$local_sha" = "$z40" ]; then
+		continue
+	fi
+	if [ "$remote_sha" = "$z40" ]; then
+		range="$local_sha"
+	else
+		range="$remote_sha..$local_sha"
+	fi
+
+	for f in .env .env.local .vscode/settings.json '.secret' '.secrets'; do
+		if git diff --name-only "$range" -- "$f" 2>/dev/null | grep -q .; then
+			echo "pre-push: BLOCKED — '$f' is in the push. Do not commit secrets or local settings."
+			exit 1
+		fi
+	done
+
+	pat="sk-[a-zA-Z0-9_-]{20,}|sk-proj-[a-zA-Z0-9_-]+|AIza[0-9A-Za-z_-]{35}"
+	if git diff "$range" 2>/dev/null | grep -qE "$pat"; then
+		echo "pre-push: BLOCKED — diff contains what looks like an API key (sk-..., AIza...). Remove secrets and try again."
+		exit 1
+	fi
+
+	if git diff "$range" 2>/dev/null | grep -E "(openaiKey|anthropicKey|apiKey|password|secret)\s*[:=]\s*[\"'][^\"']{20,}" | grep -vq "process\.env\|config\.get\|placeholder\|example\|your-"; then
+		echo "pre-push: BLOCKED — diff contains a likely secret (e.g. openaiKey/password). Use settings or env, do not commit."
+		exit 1
+	fi
+done
+
+exit 0
